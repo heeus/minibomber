@@ -301,7 +301,9 @@ func (mb *Minibomber) collectStat(stop chan bool, finished chan bool) {
 				mb.minRPS = rps
 			}
 
-			gc.Doing(fmt.Sprintf("%d%%: 2xx %d, others %d, errors %d, rps: %.1f", done*100/mb.testCase.Operations, s200, s100+s300+s400+s500, errs, rps))
+			if mb.Settings.VerboseProgress {
+				gc.Doing(fmt.Sprintf("%d%%: 2xx %d, others %d, errors %d, rps: %.1f", done*100/mb.testCase.Operations, s200, s100+s300+s400+s500, errs, rps))
+			}
 			t0 = now
 			lastDone = done
 		case <-stop:
