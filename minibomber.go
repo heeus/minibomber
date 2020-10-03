@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) 2019-present Heeus authors
+ */
+
 package minibomber
 
 import (
