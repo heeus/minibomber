@@ -16,5 +16,5 @@ res := mb.Run(TestCase{
         return strings.Index(string(response.Body()), "ok") >= 0
     },
 })
-assert.Equal(t, uint64(10), res.TotalStatus2xx)
+assert.Equal(t, uint64(100000), res.TotalStatus2xx)
 ```
