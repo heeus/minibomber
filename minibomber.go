@@ -471,11 +471,11 @@ func (r *Results) String() string {
 
 	b.WriteString(fmt.Sprintf("%-16s%-12s%-12s%-12s\n", "Latency", intvlToString(r.AvgLatency), minl, maxl))
 	b.WriteString(fmt.Sprintf("Latency Distribution\n"))
-	b.WriteString(fmt.Sprintf("	     50%%    %s\n", intvlToString(r.LatencyPercentile50)))
-	b.WriteString(fmt.Sprintf("	     75%%    %s\n", intvlToString(r.LatencyPercentile75)))
-	b.WriteString(fmt.Sprintf("	     90%%    %s\n", intvlToString(r.LatencyPercentile90)))
-	b.WriteString(fmt.Sprintf("	     95%%    %s\n", intvlToString(r.LatencyPercentile95)))
-	b.WriteString(fmt.Sprintf("	     99%%    %s\n", intvlToString(r.LatencyPercentile99)))
+	b.WriteString(fmt.Sprintf("      50%%    %s\n", intvlToString(r.LatencyPercentile50)))
+	b.WriteString(fmt.Sprintf("      75%%    %s\n", intvlToString(r.LatencyPercentile75)))
+	b.WriteString(fmt.Sprintf("      90%%    %s\n", intvlToString(r.LatencyPercentile90)))
+	b.WriteString(fmt.Sprintf("      95%%    %s\n", intvlToString(r.LatencyPercentile95)))
+	b.WriteString(fmt.Sprintf("      99%%    %s\n", intvlToString(r.LatencyPercentile99)))
 	b.WriteString(fmt.Sprintf("%-16s%s/s\n", "Throughput", bytefmt.ByteSize(uint64(r.AvgThroughputBPS))))
 	b.WriteString(fmt.Sprintf("%-16s%s\n", "Transferred", bytefmt.ByteSize(uint64(r.TotalTransferred))))
 
