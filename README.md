@@ -26,6 +26,12 @@ Overall         100000 operations in 1.4 seconds
 Statistics      Avg         Min         Max
 Req/sec         70060.8     67201.3     67201.3
 Latency         4988us      1948us      648ms
+Latency Distribution
+         50%    2998us
+         75%    3997us
+         90%    4997us
+         95%    5996us
+         99%    11ms
 Throughput      18.3M/s
 Transferred     26.1M
 HTTP codes      1xx - 0, 2xx - 100000, 3xx - 0, 4xx - 0, 5xx - 0
