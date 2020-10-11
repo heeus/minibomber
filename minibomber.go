@@ -79,6 +79,7 @@ type Results struct {
 	LatencyPercentile99 int64
 	FirstError          error
 	LastError           error
+	TotalRequests       uint64
 }
 
 // InitHandler is the initialization handler
@@ -117,6 +118,7 @@ type FuncOutput struct {
 	Status    int
 	RespValid bool
 	DataSize  uint64
+	Requests  uint64
 }
 
 // Minibomber instance
@@ -229,6 +231,7 @@ func (mb *Minibomber) handleThread(input chan FuncInput, output chan FuncOutput,
 			reqf(&req, httpreq)
 
 			attempts = 0
+			size = 0
 			err = nil
 			for {
 				err = mb.http.Do(httpreq, httpresp)
@@ -263,6 +266,7 @@ func (mb *Minibomber) handleThread(input chan FuncInput, output chan FuncOutput,
 				DataSize:  size,
 				Status:    status,
 				RespValid: valid,
+				Requests:  uint64(attempts),
 			}
 		} else {
 			finished <- true
@@ -349,6 +353,7 @@ func (mb *Minibomber) Run(testcase TestCase) Results {
 	finishedThreads := make(chan bool)
 	stopStat := make(chan bool)
 	latencies := make([]float64, mb.testCase.Operations)
+	var requests uint64 = 0
 	mb.reset()
 
 	for t := 0; t < mb.testCase.Attackers; t++ {
@@ -394,6 +399,7 @@ func (mb *Minibomber) Run(testcase TestCase) Results {
 		latencies[i] = float64(res.Latency)
 		atomic.AddInt64(&mb.cntLatency, res.Latency)
 		atomic.AddUint64(&mb.cntDataSize, res.DataSize)
+		requests += res.Requests
 		if mb.maxLatency == -1 || res.Latency > mb.maxLatency {
 			mb.maxLatency = res.Latency
 		}
@@ -436,6 +442,7 @@ func (mb *Minibomber) Run(testcase TestCase) Results {
 	results.TotalOperations = mb.cntDone
 	results.TotalValid = mb.cntValid
 	results.TotalErrors = mb.cntErrs
+	results.TotalRequests = requests
 
 	if mb.Settings.VerboseProgress {
 		gc.Info(results.String())
@@ -477,7 +484,8 @@ func (r *Results) String() string {
 	b.WriteString(fmt.Sprintf("      95%%    %s\n", intvlToString(r.LatencyPercentile95)))
 	b.WriteString(fmt.Sprintf("      99%%    %s\n", intvlToString(r.LatencyPercentile99)))
 	b.WriteString(fmt.Sprintf("%-16s%s/s\n", "Throughput", bytefmt.ByteSize(uint64(r.AvgThroughputBPS))))
-	b.WriteString(fmt.Sprintf("%-16s%s\n", "Transferred", bytefmt.ByteSize(uint64(r.TotalTransferred))))
+	b.WriteString(fmt.Sprintf("%-16s%s\n", "Transferred", bytefmt.ByteSize(r.TotalTransferred)))
+	b.WriteString(fmt.Sprintf("%-16s%d\n", "Requests sent", r.TotalRequests))
 
 	if r.TotalValid < r.TotalOperations {
 		b.WriteString(fmt.Sprintf("%-16s%d\n", "INVALID RESP", r.TotalOperations-r.TotalValid))
