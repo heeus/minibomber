@@ -484,6 +484,12 @@ func (r *Results) String() string {
 	}
 	if r.TotalErrors > 0 {
 		b.WriteString(fmt.Sprintf("%-16s%d\n", "ERRORS", r.TotalErrors))
+		if r.FirstError.Error() != r.LastError.Error() {
+			b.WriteString(fmt.Sprintf("%-16s%s\n", "First err", r.FirstError.Error()))
+			b.WriteString(fmt.Sprintf("%-16s%s\n", "Last err", r.LastError.Error()))
+		} else {
+			b.WriteString(fmt.Sprintf("%-16s%s\n", "Error", r.LastError.Error()))
+		}
 	}
 	b.WriteString(fmt.Sprintf("%-16s1xx - %d, 2xx - %d, 3xx - %d, 4xx - %d, 5xx - %d\n", "HTTP codes", r.TotalStatus1xx, r.TotalStatus2xx, r.TotalStatus3xx, r.TotalStatus4xx, r.TotalStatus5xx))
 
