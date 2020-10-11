@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"code.cloudfoundry.org/bytefmt"
+	"github.com/montanaflynn/stats"
 	gc "github.com/untillpro/gochips"
 	"github.com/valyala/fasthttp"
 )
@@ -53,26 +54,31 @@ var defaultSettings Settings = Settings{
 
 // Results keeps the test results
 type Results struct {
-	TotalOperations  uint64
-	TotalValid       uint64
-	TotalTime        time.Duration
-	TotalStatus1xx   uint64
-	TotalStatus2xx   uint64
-	TotalStatus3xx   uint64
-	TotalStatus4xx   uint64
-	TotalStatus5xx   uint64
-	TotalTransferred uint64
-	TotalErrors      uint64
-	TotalLatencyNs   int64
-	AvgRPS           float64
-	MaxRPS           float64
-	MinRPS           float64
-	AvgThroughputBPS float64
-	AvgLatency       int64
-	MinLatency       int64
-	MaxLatency       int64
-	FirstError       error
-	LastError        error
+	TotalOperations     uint64
+	TotalValid          uint64
+	TotalTime           time.Duration
+	TotalStatus1xx      uint64
+	TotalStatus2xx      uint64
+	TotalStatus3xx      uint64
+	TotalStatus4xx      uint64
+	TotalStatus5xx      uint64
+	TotalTransferred    uint64
+	TotalErrors         uint64
+	TotalLatencyNs      int64
+	AvgRPS              float64
+	MaxRPS              float64
+	MinRPS              float64
+	AvgThroughputBPS    float64
+	AvgLatency          int64
+	MinLatency          int64
+	MaxLatency          int64
+	LatencyPercentile50 int64
+	LatencyPercentile75 int64
+	LatencyPercentile90 int64
+	LatencyPercentile95 int64
+	LatencyPercentile99 int64
+	FirstError          error
+	LastError           error
 }
 
 // InitHandler is the initialization handler
@@ -342,6 +348,7 @@ func (mb *Minibomber) Run(testcase TestCase) Results {
 	chOutput := make(chan FuncOutput)
 	finishedThreads := make(chan bool)
 	stopStat := make(chan bool)
+	latencies := make([]float64, mb.testCase.Operations)
 	mb.reset()
 
 	for t := 0; t < mb.testCase.Attackers; t++ {
@@ -384,6 +391,7 @@ func (mb *Minibomber) Run(testcase TestCase) Results {
 				atomic.AddUint64(&mb.cntValid, 1)
 			}
 		}
+		latencies[i] = float64(res.Latency)
 		atomic.AddInt64(&mb.cntLatency, res.Latency)
 		atomic.AddUint64(&mb.cntDataSize, res.DataSize)
 		if mb.maxLatency == -1 || res.Latency > mb.maxLatency {
@@ -413,6 +421,11 @@ func (mb *Minibomber) Run(testcase TestCase) Results {
 	results.MinLatency = mb.minLatency
 	results.MaxLatency = mb.maxLatency
 	results.AvgLatency = mb.cntLatency / int64(mb.testCase.Operations)
+	results.LatencyPercentile50 = percentile(latencies, 50)
+	results.LatencyPercentile75 = percentile(latencies, 75)
+	results.LatencyPercentile90 = percentile(latencies, 90)
+	results.LatencyPercentile95 = percentile(latencies, 95)
+	results.LatencyPercentile99 = percentile(latencies, 99)
 	results.FirstError = mb.firstErr
 	results.LastError = mb.lastErr
 	results.TotalStatus1xx = mb.cnt1xx
@@ -430,6 +443,12 @@ func (mb *Minibomber) Run(testcase TestCase) Results {
 
 	return results
 
+}
+
+func percentile(data []float64, percent int) int64 {
+	p, err := stats.Percentile(data, float64(percent))
+	gc.ExitIfError(err)
+	return int64(p)
 }
 
 func (r *Results) String() string {
@@ -451,6 +470,12 @@ func (r *Results) String() string {
 	}
 
 	b.WriteString(fmt.Sprintf("%-16s%-12s%-12s%-12s\n", "Latency", intvlToString(r.AvgLatency), minl, maxl))
+	b.WriteString(fmt.Sprintf("Latency Distribution\n"))
+	b.WriteString(fmt.Sprintf("	     50%%    %s\n", intvlToString(r.LatencyPercentile50)))
+	b.WriteString(fmt.Sprintf("	     75%%    %s\n", intvlToString(r.LatencyPercentile75)))
+	b.WriteString(fmt.Sprintf("	     90%%    %s\n", intvlToString(r.LatencyPercentile90)))
+	b.WriteString(fmt.Sprintf("	     95%%    %s\n", intvlToString(r.LatencyPercentile95)))
+	b.WriteString(fmt.Sprintf("	     99%%    %s\n", intvlToString(r.LatencyPercentile99)))
 	b.WriteString(fmt.Sprintf("%-16s%s/s\n", "Throughput", bytefmt.ByteSize(uint64(r.AvgThroughputBPS))))
 	b.WriteString(fmt.Sprintf("%-16s%s\n", "Transferred", bytefmt.ByteSize(uint64(r.TotalTransferred))))
 

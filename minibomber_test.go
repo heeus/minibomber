@@ -62,9 +62,9 @@ func Test_Results(t *testing.T) {
 	mb := NewBomber()
 	mb.Settings.VerboseProgress = true
 	res := mb.Run(TestCase{
-		Attackers:  2,
-		Operations: 10,
-		Records:    4,
+		Attackers:  400,
+		Operations: 100000,
+		Records:    10000,
 		PrepReqFunc: func(req *FuncInput, request *fasthttp.Request) {
 			request.SetRequestURI("http://127.0.0.1:10200")
 			request.Header.SetMethodBytes([]byte("GET"))
@@ -73,6 +73,9 @@ func Test_Results(t *testing.T) {
 			return strings.Index(string(response.Body()), "ok") >= 0
 		},
 	})
+
+	t.Log(res.String())
+	fmt.Printf(res.String())
 
 	assert.Equal(t, uint64(10), res.TotalOperations)
 	assert.Equal(t, uint64(0), res.TotalErrors)
