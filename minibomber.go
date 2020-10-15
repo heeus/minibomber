@@ -108,7 +108,8 @@ type Handlers struct {
 
 // FuncInput is the test function input data
 type FuncInput struct {
-	Key string
+	Key      string
+	KeyIndex uint64
 }
 
 // FuncOutput is the test function output data
@@ -281,7 +282,8 @@ func (mb *Minibomber) sendKeys(input chan FuncInput) {
 	for i = 0; i < mb.testCase.Operations; i++ {
 		keyIndex = i % mb.testCase.Records
 		input <- FuncInput{
-			Key: mb.keys[keyIndex],
+			Key:      mb.keys[keyIndex],
+			KeyIndex: i,
 		}
 	}
 }
