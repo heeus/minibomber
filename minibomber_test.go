@@ -63,7 +63,7 @@ func Test_Results(t *testing.T) {
 	mb.Settings.VerboseProgress = true
 	res := mb.Run(TestCase{
 		Attackers:  400,
-		Operations: 100000,
+		Operations: 300000,
 		Records:    10000,
 		PrepReqFunc: func(req *FuncInput, request *fasthttp.Request) {
 			request.SetRequestURI("http://127.0.0.1:10200")
@@ -89,6 +89,41 @@ func Test_Results(t *testing.T) {
 	assert.Equal(t, uint64(0), res.TotalStatus3xx)
 	assert.Equal(t, uint64(0), res.TotalStatus4xx)
 	assert.Equal(t, uint64(0), res.TotalStatus5xx)
+
+	s.Shutdown()
+
+}
+
+func Test_WithTimeout(t *testing.T) {
+	s := &fasthttp.Server{
+		Handler: fastHTTPHandler,
+	}
+	go server(s)
+	mb := NewBomber()
+	mb.Settings.VerboseProgress = true
+	mb.Settings.MaxTimeSec = 3
+	res := mb.Run(TestCase{
+		Attackers:  400,
+		Operations: 1000000,
+		Records:    10000,
+		PrepReqFunc: func(req *FuncInput, request *fasthttp.Request) {
+			request.SetRequestURI("http://127.0.0.1:10200")
+			request.Header.SetMethodBytes([]byte("GET"))
+		},
+		ValidateRespFunc: func(request *fasthttp.Request, response *fasthttp.Response) bool {
+			return strings.Index(string(response.Body()), "ok") >= 0
+		},
+	})
+
+	t.Log(res.String())
+	fmt.Printf(res.String())
+
+	assert.True(t, res.TotalOperations < 1000000)
+	assert.True(t, res.TotalRequests < 1000000)
+	assert.True(t, res.TotalTime.Seconds() >= 3 && res.TotalTime.Seconds() < 4)
+	assert.Equal(t, nil, res.FirstError)
+	assert.Equal(t, nil, res.LastError)
+	assert.True(t, res.TotalOperations == 0)
 
 	s.Shutdown()
 

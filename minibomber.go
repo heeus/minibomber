@@ -37,6 +37,7 @@ type Settings struct {
 	OnRefuseDelayMs     uint
 	ReadTimeout         time.Duration
 	WriteTimeout        time.Duration
+	MaxTimeSec          uint
 }
 
 var defaultSettings Settings = Settings{
@@ -50,6 +51,7 @@ var defaultSettings Settings = Settings{
 	MaxConnsPerHost:     10000,
 	ReadTimeout:         10000 * time.Millisecond,
 	WriteTimeout:        10000 * time.Millisecond,
+	MaxTimeSec:          0,
 }
 
 // Results keeps the test results
@@ -127,6 +129,7 @@ type Minibomber struct {
 	testCase TestCase
 
 	cntDone     uint64
+	cntRequests uint64
 	cntErrs     uint64
 	cnt1xx      uint64
 	cnt2xx      uint64
@@ -142,6 +145,11 @@ type Minibomber struct {
 	cntValid    uint64
 	firstErr    error
 	lastErr     error
+	perc50      int64
+	perc75      int64
+	perc90      int64
+	perc95      int64
+	perc99      int64
 
 	keys     []string
 	http     fasthttp.Client
@@ -186,6 +194,7 @@ func (mb *Minibomber) reset() {
 		WriteTimeout:    mb.Settings.WriteTimeout,
 	}
 	mb.cntDone = 0
+	mb.cntRequests = 0
 	mb.cntDataSize = 0
 	mb.maxLatency = -1
 	mb.minLatency = -1
@@ -276,18 +285,6 @@ func (mb *Minibomber) handleThread(input chan FuncInput, output chan FuncOutput,
 	}
 }
 
-func (mb *Minibomber) sendKeys(input chan FuncInput) {
-	var i, keyIndex uint64
-
-	for i = 0; i < mb.testCase.Operations; i++ {
-		keyIndex = i % mb.testCase.Records
-		input <- FuncInput{
-			Key:      mb.keys[keyIndex],
-			KeyIndex: i,
-		}
-	}
-}
-
 func (mb *Minibomber) collectStat(stop chan bool, finished chan bool) {
 	tickerch := time.NewTicker(1 * time.Second).C
 	var lastDone uint64
@@ -343,6 +340,66 @@ func intvlToString(intvl int64) string {
 	return "0"
 }
 
+func (mb *Minibomber) fetchResults(output chan FuncOutput, finished chan bool) {
+	latencies := make([]float64, mb.testCase.Operations)
+	var i uint64 = 0
+	for {
+		res, more := <-output
+		if more {
+			atomic.AddUint64(&mb.cntDone, 1)
+			if res.Err != nil {
+				if mb.Settings.VerboseErrors {
+					gc.Info("Error: " + res.Err.Error())
+				}
+				atomic.AddUint64(&mb.cntErrs, 1)
+				if mb.firstErr == nil {
+					mb.firstErr = res.Err
+				}
+				mb.lastErr = res.Err
+			} else {
+				var c int = res.Status / 100
+				if c == 1 {
+					atomic.AddUint64(&mb.cnt1xx, 1)
+				} else if c == 2 {
+					atomic.AddUint64(&mb.cnt2xx, 1)
+				} else if c == 3 {
+					atomic.AddUint64(&mb.cnt3xx, 1)
+				} else if c == 4 {
+					atomic.AddUint64(&mb.cnt4xx, 1)
+				} else if c == 5 {
+					atomic.AddUint64(&mb.cnt5xx, 1)
+				}
+				if res.RespValid {
+					atomic.AddUint64(&mb.cntValid, 1)
+				}
+			}
+			latencies[i] = float64(res.Latency)
+			atomic.AddInt64(&mb.cntLatency, res.Latency)
+			atomic.AddUint64(&mb.cntDataSize, res.DataSize)
+			atomic.AddUint64(&mb.cntRequests, res.Requests)
+			if mb.maxLatency == -1 || res.Latency > mb.maxLatency {
+				mb.maxLatency = res.Latency
+			}
+			if mb.minLatency == -1 || res.Latency < mb.minLatency {
+				mb.minLatency = res.Latency
+			}
+			i++
+		} else {
+			break
+		}
+	}
+	if i < mb.testCase.Operations {
+		latencies = append([]float64(nil), latencies[:i]...)
+	}
+	mb.perc50 = percentile(latencies, 50)
+	mb.perc75 = percentile(latencies, 75)
+	mb.perc90 = percentile(latencies, 90)
+	mb.perc95 = percentile(latencies, 95)
+	mb.perc99 = percentile(latencies, 99)
+
+	finished <- true
+}
+
 // Run runs the bomber
 func (mb *Minibomber) Run(testcase TestCase) Results {
 	mb.testCase = testcase
@@ -354,8 +411,6 @@ func (mb *Minibomber) Run(testcase TestCase) Results {
 	chOutput := make(chan FuncOutput)
 	finishedThreads := make(chan bool)
 	stopStat := make(chan bool)
-	latencies := make([]float64, mb.testCase.Operations)
-	var requests uint64 = 0
 	mb.reset()
 
 	for t := 0; t < mb.testCase.Attackers; t++ {
@@ -364,63 +419,44 @@ func (mb *Minibomber) Run(testcase TestCase) Results {
 	if mb.Settings.VerboseProgress {
 		gc.Doing(fmt.Sprintf("Running test-case: %d attackers, %d records", mb.testCase.Attackers, mb.testCase.Records))
 	}
-	go mb.sendKeys(chInput)
+	//go mb.sendKeys(chInput)
 	go mb.collectStat(stopStat, finishedThreads)
+	go mb.fetchResults(chOutput, finishedThreads)
 
 	t0 := time.Now()
-	var i uint64
+	var i, keyIndex uint64
+	var timeoutSec uint = mb.Settings.MaxTimeSec
+
 	for i = 0; i < mb.testCase.Operations; i++ {
-		res := <-chOutput
-		atomic.AddUint64(&mb.cntDone, 1)
-		if res.Err != nil {
-			if mb.Settings.VerboseErrors {
-				gc.Info("Error: " + res.Err.Error())
-			}
-			atomic.AddUint64(&mb.cntErrs, 1)
-			if mb.firstErr == nil {
-				mb.firstErr = res.Err
-			}
-			mb.lastErr = res.Err
-		} else {
-			var c int = res.Status / 100
-			if c == 1 {
-				atomic.AddUint64(&mb.cnt1xx, 1)
-			} else if c == 2 {
-				atomic.AddUint64(&mb.cnt2xx, 1)
-			} else if c == 3 {
-				atomic.AddUint64(&mb.cnt3xx, 1)
-			} else if c == 4 {
-				atomic.AddUint64(&mb.cnt4xx, 1)
-			} else if c == 5 {
-				atomic.AddUint64(&mb.cnt5xx, 1)
-			}
-			if res.RespValid {
-				atomic.AddUint64(&mb.cntValid, 1)
+		if timeoutSec > 0 {
+			if i%50 == 49 {
+				t1 := time.Now()
+				if t1.Sub(t0).Seconds() >= float64(timeoutSec) {
+					break
+				}
 			}
 		}
-		latencies[i] = float64(res.Latency)
-		atomic.AddInt64(&mb.cntLatency, res.Latency)
-		atomic.AddUint64(&mb.cntDataSize, res.DataSize)
-		requests += res.Requests
-		if mb.maxLatency == -1 || res.Latency > mb.maxLatency {
-			mb.maxLatency = res.Latency
-		}
-		if mb.minLatency == -1 || res.Latency < mb.minLatency {
-			mb.minLatency = res.Latency
+		keyIndex = i % mb.testCase.Records
+		chInput <- FuncInput{
+			Key:      mb.keys[keyIndex],
+			KeyIndex: i,
 		}
 	}
 
 	close(chInput)
-	stopStat <- true
-
 	for t := 0; t < mb.testCase.Attackers; t++ {
 		<-finishedThreads
 	}
+
+	close(chOutput)
+	<-finishedThreads // fetchResults
+
+	stopStat <- true
 	<-finishedThreads // showStat
 
 	results := Results{}
 	results.TotalTime = time.Now().Sub(t0)
-	results.AvgRPS = float64(mb.testCase.Operations) / results.TotalTime.Seconds()
+	results.AvgRPS = float64(mb.cntDone) / results.TotalTime.Seconds()
 	results.MaxRPS = mb.maxRPS
 	results.MinRPS = mb.minRPS
 	results.TotalTransferred = mb.cntDataSize
@@ -428,12 +464,12 @@ func (mb *Minibomber) Run(testcase TestCase) Results {
 	results.AvgThroughputBPS = float64(mb.cntDataSize) / results.TotalTime.Seconds()
 	results.MinLatency = mb.minLatency
 	results.MaxLatency = mb.maxLatency
-	results.AvgLatency = mb.cntLatency / int64(mb.testCase.Operations)
-	results.LatencyPercentile50 = percentile(latencies, 50)
-	results.LatencyPercentile75 = percentile(latencies, 75)
-	results.LatencyPercentile90 = percentile(latencies, 90)
-	results.LatencyPercentile95 = percentile(latencies, 95)
-	results.LatencyPercentile99 = percentile(latencies, 99)
+	results.AvgLatency = mb.cntLatency / int64(mb.cntDone)
+	results.LatencyPercentile50 = mb.perc50
+	results.LatencyPercentile75 = mb.perc75
+	results.LatencyPercentile90 = mb.perc90
+	results.LatencyPercentile95 = mb.perc95
+	results.LatencyPercentile99 = mb.perc99
 	results.FirstError = mb.firstErr
 	results.LastError = mb.lastErr
 	results.TotalStatus1xx = mb.cnt1xx
@@ -444,7 +480,7 @@ func (mb *Minibomber) Run(testcase TestCase) Results {
 	results.TotalOperations = mb.cntDone
 	results.TotalValid = mb.cntValid
 	results.TotalErrors = mb.cntErrs
-	results.TotalRequests = requests
+	results.TotalRequests = mb.cntRequests
 
 	if mb.Settings.VerboseProgress {
 		gc.Info(results.String())
