@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -112,6 +113,47 @@ func Test_WithTimeout(t *testing.T) {
 		},
 		ValidateRespFunc: func(request *fasthttp.Request, response *fasthttp.Response) bool {
 			return strings.Index(string(response.Body()), "ok") >= 0
+		},
+	})
+
+	t.Log(res.String())
+	fmt.Printf(res.String())
+
+	assert.True(t, res.TotalOperations < 1000000)
+	assert.True(t, res.TotalRequests < 1000000)
+	assert.True(t, res.TotalTime.Seconds() >= 3 && res.TotalTime.Seconds() < 4)
+	assert.Equal(t, nil, res.FirstError)
+	assert.Equal(t, nil, res.LastError)
+	assert.True(t, res.TotalOperations == 0)
+
+	s.Shutdown()
+
+}
+
+func Test_WithTimeoutAndErrors(t *testing.T) {
+	s := &fasthttp.Server{
+		Handler: fastHTTPHandler,
+	}
+	go server(s)
+	mb := NewBomber()
+	mb.Settings.VerboseProgress = true
+	mb.Settings.MaxTimeSec = 3
+	var counter int64 = 0
+	res := mb.Run(TestCase{
+		Attackers:  400,
+		Operations: 1000000,
+		Records:    10000,
+		PrepReqFunc: func(req *FuncInput, request *fasthttp.Request) {
+			request.SetRequestURI("http://127.0.0.1:10200")
+			request.Header.SetMethodBytes([]byte("GET"))
+		},
+		ValidateRespFunc: func(request *fasthttp.Request, response *fasthttp.Response) bool {
+			ui := atomic.AddInt64(&counter, 1)
+			if ui%2 == 0 {
+				return strings.Index(string(response.Body()), "ok") >= 0
+			}
+			return false
+
 		},
 	})
 
