@@ -464,7 +464,7 @@ func (mb *Minibomber) Run(testcase TestCase) Results {
 		keyIndex = i % mb.testCase.Records
 		chInput <- FuncInput{
 			Key:      mb.keys[keyIndex],
-			KeyIndex: i,
+			KeyIndex: keyIndex,
 		}
 	}
 
